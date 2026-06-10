@@ -1,0 +1,212 @@
+# ============================================================
+# React Browser Extension / Browser Plugin .gitignore
+# ============================================================
+
+# ------------------------------------------------------------
+# Dependencies
+# ------------------------------------------------------------
+node_modules/
+jspm_packages/
+bower_components/
+
+# ------------------------------------------------------------
+# Build Outputs
+# ------------------------------------------------------------
+dist/
+build/
+out/
+release/
+public/build/
+.next/
+.vercel/
+
+# Browser extension packaged artifacts
+*.zip
+*.crx
+*.xpi
+
+# ------------------------------------------------------------
+# Environment Variables
+# ------------------------------------------------------------
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Keep example files
+!.env.example
+
+# ------------------------------------------------------------
+# Logs
+# ------------------------------------------------------------
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ------------------------------------------------------------
+# Cache Directories
+# ------------------------------------------------------------
+.cache/
+.parcel-cache/
+.eslintcache
+.stylelintcache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Vite
+.vite/
+
+# Turbo
+.turbo/
+
+# Storybook
+.storybook-out/
+storybook-static/
+
+# ------------------------------------------------------------
+# Test Coverage
+# ------------------------------------------------------------
+coverage/
+.nyc_output/
+
+# ------------------------------------------------------------
+# TypeScript
+# ------------------------------------------------------------
+*.tsbuildinfo
+
+# ------------------------------------------------------------
+# IDEs and Editors
+# ------------------------------------------------------------
+
+# VS Code
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# JetBrains
+.idea/
+*.iml
+
+# Visual Studio
+.vs/
+
+# Sublime
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# ------------------------------------------------------------
+# Operating System Files
+# ------------------------------------------------------------
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Linux
+.directory
+
+# ------------------------------------------------------------
+# Temporary Files
+# ------------------------------------------------------------
+tmp/
+temp/
+.tmp/
+
+# ------------------------------------------------------------
+# Package Managers
+# ------------------------------------------------------------
+
+# pnpm
+.pnpm-store/
+
+# npm cache
+.npm/
+
+# Yarn
+.yarn/cache/
+.yarn/unplugged/
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+# ------------------------------------------------------------
+# Bundlers
+# ------------------------------------------------------------
+
+# Webpack
+webpack-stats.json
+
+# Rollup
+.rollup.cache/
+
+# Parcel
+.cache-loader/
+
+# ------------------------------------------------------------
+# Browser Extension Specific
+# ------------------------------------------------------------
+
+# Generated manifests (if built dynamically)
+manifest.generated.json
+
+# Generated extension assets
+extension-build/
+extension-dist/
+
+# Chrome extension keys
+*.pem
+
+# Local signing keys
+keys/
+certificates/
+
+# Firefox signing artifacts
+web-ext-artifacts/
+
+# Extension store upload artifacts
+store-upload/
+publish/
+
+# ------------------------------------------------------------
+# Testing
+# ------------------------------------------------------------
+playwright-report/
+test-results/
+e2e-results/
+
+# Playwright
+.playwright/
+
+# Cypress
+cypress/screenshots/
+cypress/videos/
+cypress/downloads/
+
+# ------------------------------------------------------------
+# Misc
+# ------------------------------------------------------------
+*.seed
+*.pid
+*.pid.lock
+
+# Optional local notes
+notes.local.md
+TODO.local.md
