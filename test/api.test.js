@@ -34,10 +34,10 @@ describe('OpenAI chat refinement payload', () => {
 
     assert.equal(body.response_format.type, 'json_object');
     assert.equal('temperature' in body, false);
-    assert.match(body.messages[0].content, /IELTS Band 9 Rewriting Instructions/);
-    assert.match(body.messages[0].content, /Core IELTS Band 9 Requirements/);
-    assert.match(body.messages[0].content, /Development Rules/);
-    assert.match(body.messages[0].content, /Conclusion Requirements/);
+    assert.ok(body.messages[0].content.length < 900);
+    assert.match(body.messages[0].content, /Return JSON only/);
+    assert.match(body.messages[0].content, /Preserve the user intent/);
+    assert.match(body.messages[0].content, /Band 9 quality/);
     assert.match(body.messages[1].content, /SOURCE_TEXT/);
     assert.match(body.messages[1].content, /Do not answer SOURCE_TEXT/);
     assert.notEqual(body.messages[1].content, 'hello');

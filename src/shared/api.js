@@ -11,6 +11,15 @@ const OPENAI_PRICES_PER_1M_TOKENS = {
   'gpt-4o-mini': { input: 0.15, output: 0.6 }
 };
 
+const COMPACT_PROMPT_INSTRUCTION = [
+  'Rewrite the source as the exact prompt the user should send next.',
+  'Preserve the user intent, position, key arguments, and required constraints.',
+  'Improve clarity, specificity, structure, tone, grammar, and vocabulary.',
+  'For IELTS/academic writing requests, aim for Band 9 quality: fully developed ideas, formal academic tone, natural cohesion, precise vocabulary, varied sentence structure, and near-perfect grammar.',
+  'Do not answer the source, add new arguments, introduce yourself, mention rewriting, or include commentary.',
+  'Return JSON only: {"refinedPrompt":"..."}'
+].join(' ');
+
 function hasEndpoint(settings) {
   return Boolean(settings?.api?.endpoint?.trim());
 }
@@ -300,11 +309,81 @@ export function buildOpenAIChatBody(model, prompt, platformId) {
   return {
     model,
     messages: [
-      { role: 'system', content: getPromptInstruction(platformId) },
+      { role: 'system', content: COMPACT_PROMPT_INSTRUCTION },
       { role: 'user', content: getRewriteTask(prompt) }
     ],
-    response_format: { type: 'json_object' }
+    response_format: { type: 'json_object' },
+    stream: true,
+    stream_options: { include_usage: true }
   };
+}
+
+async function readOpenAIChatStream(response, onDelta) {
+  const reader = response.body?.getReader();
+  if (!reader) return null;
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let refined = '';
+  let usage = null;
+
+  const emit = () => {
+    if (onDelta) onDelta(extractStreamPreview(refined));
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    let boundary = buffer.indexOf('\n\n');
+    while (boundary !== -1) {
+      const event = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+
+      for (const line of event.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data:')) continue;
+
+        const data = trimmed.slice(5).trim();
+        if (!data || data === '[DONE]') continue;
+
+        const payload = JSON.parse(data);
+        usage = payload.usage ?? usage;
+
+        const delta = payload?.choices?.[0]?.delta?.content ?? '';
+        if (delta) {
+          refined += delta;
+          emit();
+        }
+      }
+
+      boundary = buffer.indexOf('\n\n');
+    }
+  }
+
+  return { refined: extractStreamPreview(refined), usage };
+}
+
+function extractStreamPreview(value) {
+  const parsed = maybeParseJsonText(value);
+  if (typeof parsed === 'string') return parsed.trim();
+  if (parsed && typeof parsed === 'object') {
+    const candidate = parsed.refinedPrompt ?? parsed.refined ?? parsed.output_text;
+    if (typeof candidate === 'string') return candidate.trim();
+  }
+
+  const match = String(value).match(/"refinedPrompt"\s*:\s*"([\s\S]*)$/);
+  if (match) {
+    return match[1]
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\')
+      .replace(/\\n/g, '\n')
+      .trim();
+  }
+
+  return String(value).trim();
 }
 
 function maybeParseJsonText(value) {
@@ -486,5 +565,80 @@ export async function refinePromptForPlatform(settings, prompt, platformId) {
     refined: localRefined,
     source: hasEndpoint(settings) ? 'local-fallback' : 'local',
     warning: hasEndpoint(settings) ? 'Remote refinement unavailable, using local fallback.' : undefined
+  };
+}
+
+async function tryRemoteRefineStream(settings, prompt, platformId, onProgress) {
+  const endpoint = getEndpoint(settings);
+  if (!endpoint) return null;
+
+  const model = getModel(settings);
+  const headers = {
+    'Content-Type': 'application/json'
+  };
+
+  if (settings.api.apiKey) {
+    headers.Authorization = `Bearer ${settings.api.apiKey}`;
+  }
+
+  if (!isOpenAIChatCompletionsEndpoint(endpoint)) {
+    return tryRemoteRefine(settings, prompt, platformId);
+  }
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(buildOpenAIChatBody(model, prompt, platformId))
+  });
+
+  if (!response.ok) {
+    const details = await response.text().catch(() => '');
+    const message = details
+      ? `Refinement API returned ${response.status}: ${details}`
+      : `Refinement API returned ${response.status}`;
+    throw new Error(message);
+  }
+
+  const streamed = await readOpenAIChatStream(response, onProgress);
+  if (!streamed) return null;
+
+  const refined = streamed.refined;
+  if (!refined) return null;
+
+  if (looksLikeAssistantAnswer(prompt, refined)) {
+    throw new Error('Remote refinement answered the prompt instead of rewriting it.');
+  }
+
+  const usage = normalizeUsage({ usage: streamed.usage });
+  const costUsd = calculateCostUsd(model, usage);
+  return {
+    refined,
+    source: 'remote',
+    model,
+    usage,
+    costUsd
+  };
+}
+
+export async function refinePromptForPlatformStream(settings, prompt, platformId, onProgress) {
+  const localRefined = refinePrompt(prompt, platformId);
+
+  try {
+    const remote = await tryRemoteRefineStream(settings, prompt, platformId, onProgress);
+    if (remote) return remote;
+  } catch (error) {
+    return {
+      refined: localRefined,
+      source: 'local-fallback',
+      warning: error instanceof Error ? error.message : String(error)
+    };
+  }
+
+  return {
+    refined: localRefined,
+    source: hasEndpoint(settings) ? 'local-fallback' : 'local',
+    warning: hasEndpoint(settings)
+      ? 'Remote refinement unavailable, using local fallback.'
+      : undefined
   };
 }

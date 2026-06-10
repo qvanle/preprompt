@@ -156,6 +156,24 @@ function createDialogText(label, value) {
   return section;
 }
 
+function createEditableDialogText(label, value) {
+  const section = document.createElement('section');
+  section.className = 'reprompt-review__prompt';
+
+  const heading = document.createElement('span');
+  heading.className = 'section-label';
+  heading.textContent = label;
+
+  const body = document.createElement('textarea');
+  body.className = 'reprompt-review__editor';
+  body.value = value;
+  body.spellcheck = false;
+  body.rows = 8;
+
+  section.append(heading, body);
+  return { section, body };
+}
+
 function createReviewDialog(original) {
   let closed = false;
   let refined = '';
@@ -229,10 +247,23 @@ function createReviewDialog(original) {
       border-radius: 8px;
       background: #ffffff;
     }
-    .reprompt-review__prompt p {
-      color: #24323d;
-      white-space: pre-wrap;
-    }
+.reprompt-review__prompt p {
+  color: #24323d;
+  white-space: pre-wrap;
+}
+
+.reprompt-review__editor {
+  width: 100%;
+  min-height: 140px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #24323d;
+  font: inherit;
+  line-height: 1.45;
+  resize: vertical;
+  outline: none;
+}
     .reprompt-review__warning {
       padding: 10px 12px;
       border: 1px solid rgba(202, 138, 4, 0.26);
@@ -298,9 +329,9 @@ function createReviewDialog(original) {
   body.className = 'reprompt-review__body';
   body.append(createDialogText('Original', original));
 
-  const refinedSection = createDialogText('Enhanced', 'Enhancing prompt...');
-  const refinedBody = refinedSection.querySelector('p');
-  body.append(refinedSection);
+  const refinedSection = createEditableDialogText('Enhanced', 'Enhancing prompt...');
+  const refinedBody = refinedSection.body;
+  body.append(refinedSection.section);
 
   const warningText = document.createElement('p');
   warningText.className = 'reprompt-review__warning';
@@ -336,8 +367,17 @@ function createReviewDialog(original) {
   host.append(style, overlay);
   document.documentElement.append(host);
 
+  refinedBody.addEventListener('input', () => {
+    if (closed) return;
+    refined = refinedBody.value.trim();
+    acceptButton.disabled = !refined;
+  });
+
   const showWarning = (message) => {
-    if (!message || closed) {
+    if (closed) return;
+    if (!message) {
+      warningText.hidden = true;
+      warningText.textContent = '';
       return;
     }
     warningText.textContent = message;
@@ -351,7 +391,10 @@ function createReviewDialog(original) {
     closed = true;
     document.removeEventListener('keydown', handleDialogKeydown);
     host.remove();
-    resolveChoice({ action, refined });
+    resolveChoice({
+      action,
+      refined: action === 'enhanced' ? refinedBody.value.trim() : refined
+    });
   };
 
   function handleDialogKeydown(event) {
@@ -373,11 +416,25 @@ function createReviewDialog(original) {
         return;
       }
       refined = result.refined || '';
-      refinedBody.textContent = refined || 'Enhancement unavailable.';
+      if (!refinedBody.matches(':focus')) {
+        refinedBody.value = refined || 'Enhancement unavailable.';
+      }
+      refined = refinedBody.value.trim();
       acceptButton.disabled = !refined;
       if (result.warning) {
         showWarning(result.warning);
       }
+    },
+    setStreaming(text) {
+      if (closed) {
+        return;
+      }
+      if (!refinedBody.matches(':focus')) {
+        refinedBody.value = text || 'Enhancing prompt...';
+      }
+      refined = refinedBody.value.trim();
+      acceptButton.disabled = !refined;
+      showWarning('');
     },
     setWarning: showWarning,
     setError(message) {
@@ -385,7 +442,7 @@ function createReviewDialog(original) {
         return;
       }
       refined = '';
-      refinedBody.textContent = message;
+      refinedBody.value = message;
       acceptButton.disabled = true;
       showWarning('You can send the original prompt or keep editing.');
     }
@@ -418,6 +475,68 @@ function refinePrompt(original) {
   });
 }
 
+function refinePromptStream(original, onProgress) {
+  const port = chrome.runtime.connect({ name: 'REFINE_PROMPT_STREAM' });
+  let settled = false;
+
+  const promise = new Promise((resolve, reject) => {
+    port.onMessage.addListener((message) => {
+      if (!message?.type) return;
+
+      if (message.type === 'progress') {
+        onProgress?.(message.refined);
+        return;
+      }
+
+      if (message.type === 'result') {
+        settled = true;
+        try {
+          port.disconnect();
+        } catch {
+          // ignore
+        }
+        resolve(message.result);
+        return;
+      }
+
+      if (message.type === 'error') {
+        settled = true;
+        try {
+          port.disconnect();
+        } catch {
+          // ignore
+        }
+        reject(new Error(message.error));
+      }
+    });
+
+    port.onDisconnect.addListener(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error('Stream disconnected.'));
+    });
+  });
+
+  port.postMessage({
+    type: 'REFINE_PROMPT_STREAM',
+    prompt: original,
+    platformId: platform?.id
+  });
+
+  return {
+    promise,
+    cancel() {
+      if (settled) return;
+      settled = true;
+      try {
+        port.disconnect();
+      } catch {
+        // ignore
+      }
+    }
+  };
+}
+
 async function autoRefineAndSend(original, compose, submit) {
   const result = await refinePrompt(original);
   if (result?.refined) {
@@ -433,7 +552,11 @@ async function reviewAndSend(original, compose, submit) {
     dialog.setWarning('Enhancement is taking longer than expected.');
   }, 8000);
 
-  const resultPromise = refinePrompt(original)
+  const stream = refinePromptStream(original, (refined) => {
+    dialog.setStreaming(refined);
+  });
+
+  const resultPromise = stream.promise
     .then((result) => {
       clearTimeout(slowTimer);
       dialog.setResult(result);
@@ -451,11 +574,13 @@ async function reviewAndSend(original, compose, submit) {
 
   const choice = await dialog.choice;
   if (choice.action === 'edit') {
+    stream.cancel();
     writePromptValue(compose, original);
     return;
   }
 
   if (choice.action === 'original') {
+    stream.cancel();
     writePromptValue(compose, original);
     submit();
     return;

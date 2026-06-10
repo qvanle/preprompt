@@ -1,5 +1,9 @@
 import { appendHistory, getHistory, getSettings, saveSettings } from './shared/storage.js';
-import { getConnectionStatus, refinePromptForPlatform } from './shared/api.js';
+import {
+  getConnectionStatus,
+  refinePromptForPlatform,
+  refinePromptForPlatformStream
+} from './shared/api.js';
 
 chrome.runtime.onInstalled.addListener(async () => {
   const settings = await getSettings();
@@ -7,9 +11,7 @@ chrome.runtime.onInstalled.addListener(async () => {
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (!message?.type) {
-    return false;
-  }
+  if (!message?.type) return false;
 
   if (message.type === 'REFINE_PROMPT') {
     getSettings()
@@ -34,20 +36,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.type === 'GET_STATE') {
     Promise.all([getSettings(), getHistory()])
-      .then(([settings, history]) =>
+      .then(([settings, history]) => {
         sendResponse({
           settings,
           history,
           connection: getConnectionStatus(settings)
-        })
-      )
+        });
+      })
       .catch((error) => sendResponse({ ok: false, error: String(error) }));
     return true;
   }
 
   if (message.type === 'SAVE_SETTINGS') {
     saveSettings(message.patch)
-      .then((settings) => sendResponse({ settings, connection: getConnectionStatus(settings) }))
+      .then((settings) => {
+        sendResponse({ settings, connection: getConnectionStatus(settings) });
+      })
       .catch((error) => sendResponse({ ok: false, error: String(error) }));
     return true;
   }
@@ -59,4 +63,39 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   return false;
+});
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'REFINE_PROMPT_STREAM') return;
+
+  let active = true;
+  port.onDisconnect.addListener(() => {
+    active = false;
+  });
+
+  port.onMessage.addListener(async (message) => {
+    if (message?.type !== 'REFINE_PROMPT_STREAM') return;
+
+    try {
+      const settings = await getSettings();
+      const result = await refinePromptForPlatformStream(
+        settings,
+        message.prompt,
+        message.platformId,
+        (refined) => {
+          if (!active) return;
+          port.postMessage({ type: 'progress', refined });
+        }
+      );
+
+      if (!active) return;
+      port.postMessage({ type: 'result', result });
+    } catch (error) {
+      if (!active) return;
+      port.postMessage({
+        type: 'error',
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
 });
