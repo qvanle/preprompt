@@ -1,15 +1,5 @@
-import { appendHistory, getSettings, saveSettings } from './shared/storage.js';
-import { refinePromptForPlatform, getConnectionStatus } from './shared/api.js';
-
-async function sendToActiveTab(message) {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) {
-    return { ok: false, error: 'No active tab found.' };
-  }
-
-  await chrome.tabs.sendMessage(tab.id, message);
-  return { ok: true };
-}
+import { appendHistory, getHistory, getSettings, saveSettings } from './shared/storage.js';
+import { getConnectionStatus, refinePromptForPlatform } from './shared/api.js';
 
 chrome.runtime.onInstalled.addListener(async () => {
   const settings = await getSettings();
@@ -25,54 +15,47 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     getSettings()
       .then((settings) => refinePromptForPlatform(settings, message.prompt, message.platformId))
       .then((result) => sendResponse(result))
-      .catch((error) => {
+      .catch((error) =>
         sendResponse({
           refined: message.prompt,
           source: 'error',
           warning: error instanceof Error ? error.message : String(error)
-        });
-      });
+        })
+      );
     return true;
   }
 
   if (message.type === 'LOG_HISTORY') {
     appendHistory(message.entry)
-      .then(() => sendResponse({ ok: true }))
+      .then((history) => sendResponse({ ok: true, history }))
       .catch((error) => sendResponse({ ok: false, error: String(error) }));
     return true;
   }
 
   if (message.type === 'GET_STATE') {
-    Promise.all([getSettings(), chrome.storage.local.get('reprompt.history')])
+    Promise.all([getSettings(), getHistory()])
       .then(([settings, history]) =>
         sendResponse({
           settings,
-          history: history['reprompt.history'] ?? [],
+          history,
           connection: getConnectionStatus(settings)
         })
       )
-      .catch((error) => sendResponse({ error: String(error) }));
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
     return true;
   }
 
   if (message.type === 'SAVE_SETTINGS') {
     saveSettings(message.patch)
       .then((settings) => sendResponse({ settings, connection: getConnectionStatus(settings) }))
-      .catch((error) => sendResponse({ error: String(error) }));
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
     return true;
   }
 
-  if (message.type === 'OPEN_OPTIONS') {
+  if (message.type === 'OPEN_OPTIONS' || message.type === 'OPEN_DASHBOARD') {
     chrome.runtime.openOptionsPage();
     sendResponse({ ok: true });
     return false;
-  }
-
-  if (message.type === 'SHOW_SIDEBAR' || message.type === 'HIDE_SIDEBAR' || message.type === 'TOGGLE_SIDEBAR') {
-    sendToActiveTab({ type: message.type })
-      .then((result) => sendResponse(result))
-      .catch((error) => sendResponse({ ok: false, error: String(error) }));
-    return true;
   }
 
   return false;

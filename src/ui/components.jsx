@@ -1,15 +1,15 @@
 import { platformName, PLATFORMS } from '../shared/platforms.js';
 
-export function Card({ title, subtitle, children, actions }) {
+export function Card({ title, subtitle, children, actions, className = '' }) {
   return (
-    <section className="card">
-      <header className="card__header">
+    <section className={`card ${className}`.trim()}>
+      <div className="card__header">
         <div>
           <h2>{title}</h2>
           {subtitle ? <p>{subtitle}</p> : null}
         </div>
         {actions ? <div className="card__actions">{actions}</div> : null}
-      </header>
+      </div>
       {children}
     </section>
   );
@@ -20,7 +20,6 @@ export function PlatformPicker({ value, onChange }) {
     <div className="platforms" role="group" aria-label="Platforms">
       {PLATFORMS.map((platform) => {
         const active = value.includes(platform.id);
-
         return (
           <button
             key={platform.id}
@@ -65,20 +64,20 @@ export function Toggle({ label, hint, checked, onChange }) {
       </span>
       <input
         type="checkbox"
-        checked={checked}
+        checked={Boolean(checked)}
         onChange={(event) => onChange(event.target.checked)}
       />
-      <span className="switch" aria-hidden="true" />
     </label>
   );
 }
 
-export function TextField({ label, value, placeholder, onChange }) {
+export function TextField({ label, value, placeholder, type = 'text', onChange }) {
   return (
     <label className="field">
       <span>{label}</span>
       <input
-        value={value}
+        type={type}
+        value={value ?? ''}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
       />
@@ -86,58 +85,117 @@ export function TextField({ label, value, placeholder, onChange }) {
   );
 }
 
-export function HistoryList({ history }) {
-  if (!history.length) {
-    return (
-      <div className="empty-state">
-        <strong>No prompt history yet</strong>
-        <p>Refined prompts will appear here after Reprompt processes a message.</p>
-      </div>
-    );
-  }
+function formatNumber(value) {
+  return new Intl.NumberFormat('en-US').format(Number(value ?? 0));
+}
 
-  return (
-    <div className="history">
-      {history.map((item) => (
-        <article className="history__item" key={item.id}>
-          <header>
-            <strong>{platformName(item.platformId)}</strong>
-            <span>{new Date(item.createdAt).toLocaleString()}</span>
-          </header>
-          <div className="history__grid">
-            <div>
-              <label>Original</label>
-              <p>{item.original}</p>
-            </div>
-            <div>
-              <label>Refined</label>
-              <p>{item.refined}</p>
-            </div>
-          </div>
-        </article>
-      ))}
-    </div>
+export function formatCost(value) {
+  return typeof value === 'number' ? `$${value.toFixed(6)}` : 'Unknown';
+}
+
+function getUsageTotals(history) {
+  return history.reduce(
+    (totals, entry) => {
+      const usage = entry.usage ?? {};
+      return {
+        calls: totals.calls + (entry.source === 'remote' ? 1 : 0),
+        inputTokens: totals.inputTokens + Number(usage.inputTokens ?? 0),
+        outputTokens: totals.outputTokens + Number(usage.outputTokens ?? 0),
+        totalTokens: totals.totalTokens + Number(usage.totalTokens ?? 0),
+        costUsd: totals.costUsd + Number(entry.costUsd ?? 0)
+      };
+    },
+    { calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0 }
   );
 }
 
 export function Analytics({ history }) {
-  const total = history.length;
-  const byPlatform = history.reduce((acc, item) => {
-    acc[item.platformId] = (acc[item.platformId] ?? 0) + 1;
-    return acc;
-  }, {});
+  const remoteCount = history.filter((entry) => entry.source === 'remote').length;
+  const localCount = history.length - remoteCount;
+  const totals = getUsageTotals(history);
 
   return (
     <div className="analytics">
       <div className="stat stat--primary">
-        <span>Total refined</span>
-        <strong>{total}</strong>
+        <span>Total refinements</span>
+        <strong>{formatNumber(history.length)}</strong>
       </div>
-      {PLATFORMS.map((platform) => (
-        <div className="stat" key={platform.id}>
-          <span>{platform.name}</span>
-          <strong>{byPlatform[platform.id] ?? 0}</strong>
-        </div>
+      <div className="stat">
+        <span>API calls</span>
+        <strong>{formatNumber(totals.calls)}</strong>
+      </div>
+      <div className="stat">
+        <span>Total tokens</span>
+        <strong>{formatNumber(totals.totalTokens)}</strong>
+      </div>
+      <div className="stat">
+        <span>Estimated cost</span>
+        <strong>{formatCost(totals.costUsd)}</strong>
+      </div>
+      <div className="stat">
+        <span>Input / output</span>
+        <strong>
+          {formatNumber(totals.inputTokens)} / {formatNumber(totals.outputTokens)}
+        </strong>
+      </div>
+      <div className="stat">
+        <span>Local fallback</span>
+        <strong>{formatNumber(localCount)}</strong>
+      </div>
+    </div>
+  );
+}
+
+function formatDate(value) {
+  if (!value) {
+    return 'Unknown time';
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  }).format(new Date(value));
+}
+
+function formatUsage(usage) {
+  if (!usage) {
+    return 'Usage unknown';
+  }
+
+  return `${formatNumber(usage.inputTokens)} in / ${formatNumber(usage.outputTokens)} out`;
+}
+
+export function HistoryList({ history }) {
+  if (!history.length) {
+    return <p className="empty">No prompt history yet.</p>;
+  }
+
+  return (
+    <div className="history">
+      {history.map((entry) => (
+        <article className="history__item" key={entry.id}>
+          <div className="history__meta">
+            <strong>{platformName(entry.platformId)}</strong>
+            <span>{formatDate(entry.createdAt)}</span>
+          </div>
+          <div className="history__usage">
+            <span>{entry.source ?? 'local'}</span>
+            <span>{entry.model ?? 'Local model'}</span>
+            <span>{formatUsage(entry.usage)}</span>
+            <span>{formatCost(entry.costUsd)}</span>
+          </div>
+          <div className="history__grid">
+            <div>
+              <span className="section-label">Original</span>
+              <p>{entry.original}</p>
+            </div>
+            <div>
+              <span className="section-label">Enhanced</span>
+              <p>{entry.refined}</p>
+            </div>
+          </div>
+          {entry.warning ? <p className="history__warning">{entry.warning}</p> : null}
+        </article>
       ))}
     </div>
   );

@@ -1,7 +1,3 @@
-import React from 'react';
-import { createRoot } from 'react-dom/client';
-import DashboardPanel from './ui/DashboardPanel.jsx';
-import { SIDEBAR_CSS } from './ui/sidebarCss.js';
 import { detectPlatform } from './shared/platforms.js';
 import { getSettings } from './shared/storage.js';
 
@@ -13,23 +9,18 @@ const COMPOSER_SELECTOR = [
   'input[type="text"]',
   '[contenteditable="true"]',
   '[role="textbox"]'
-].join(', ');
+].join(',');
 
 const SEND_BUTTON_SELECTOR = [
   '[data-testid="send-button"]',
   '[data-testid="composer-submit-button"]',
   'button[aria-label*="Send" i]',
   'button[aria-label*="Submit" i]',
-  'button[type="submit"]',
-  '[role="button"][aria-label*="Send" i]',
-  '[role="button"][aria-label*="Submit" i]'
-].join(', ');
-
-const platform = detectPlatform(location.hostname);
+  'button[type="submit"]'
+].join(',');
 
 let settings = null;
-let sidebarHost = null;
-let sidebarRoot = null;
+let platform = detectPlatform(window.location.hostname);
 
 const composeBindings = new WeakSet();
 const boundForms = new WeakSet();
@@ -47,62 +38,24 @@ function markLoaded() {
 }
 
 function shouldRun() {
-  return Boolean(platform && settings?.enabled && settings.activePlatformIds.includes(platform.id));
-}
-
-function ensureSidebar() {
-  if (sidebarHost) {
-    return sidebarHost;
-  }
-
-  sidebarHost = document.createElement('div');
-  sidebarHost.id = 'reprompt-sidebar-host';
-  sidebarHost.style.cssText = `
-    position: fixed;
-    top: 16px;
-    right: 16px;
-    z-index: 2147483646;
-  `;
-
-  const shadow = sidebarHost.attachShadow({ mode: 'open' });
-  const style = document.createElement('style');
-  style.textContent = SIDEBAR_CSS;
-  const mount = document.createElement('div');
-  shadow.append(style, mount);
-
-  sidebarRoot = createRoot(mount);
-  sidebarRoot.render(
-    <React.StrictMode>
-      <DashboardPanel compact onClose={hideSidebar} />
-    </React.StrictMode>
+  return Boolean(
+    platform &&
+      settings?.enabled &&
+      settings?.autoRefine &&
+      settings.activePlatformIds.includes(platform.id)
   );
-
-  document.documentElement.append(sidebarHost);
-  return sidebarHost;
 }
 
-function showSidebar() {
-  ensureSidebar();
-  sidebarHost.style.display = 'block';
-}
-
-function hideSidebar() {
-  if (sidebarHost) {
-    sidebarHost.style.display = 'none';
-  }
-}
-
-function findComposeElement(node) {
-  if (!node || node === document || node === window) {
+function findComposeElement(root = document) {
+  if (!root) {
     return null;
   }
 
-  const candidate = node.closest?.(COMPOSER_SELECTOR);
-  if (candidate) {
-    return candidate;
+  if (root.matches?.(COMPOSER_SELECTOR)) {
+    return root;
   }
 
-  return node.querySelector?.(COMPOSER_SELECTOR) ?? null;
+  return root.querySelector?.(COMPOSER_SELECTOR) ?? null;
 }
 
 function readPromptValue(el) {
@@ -110,7 +63,7 @@ function readPromptValue(el) {
     return el.value;
   }
 
-  return el.textContent ?? '';
+  return el?.textContent ?? '';
 }
 
 function findActiveComposeElement(trigger) {
@@ -125,30 +78,23 @@ function findActiveComposeElement(trigger) {
     return active;
   }
 
-  const composers = [...document.querySelectorAll(COMPOSER_SELECTOR)];
-  return composers.reverse().find((compose) => readPromptValue(compose).trim()) ?? null;
+  return Array.from(document.querySelectorAll(COMPOSER_SELECTOR)).find((candidate) =>
+    readPromptValue(candidate).trim()
+  );
 }
 
 function isLikelySendButton(button) {
-  if (!button || button.disabled || button.getAttribute('aria-disabled') === 'true') {
-    return false;
-  }
-
-  if (button.matches?.(SEND_BUTTON_SELECTOR)) {
-    return true;
-  }
-
   const label = [
     button.getAttribute('aria-label'),
-    button.getAttribute('title'),
     button.getAttribute('data-testid'),
+    button.getAttribute('title'),
     button.textContent
   ]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
 
-  return /\b(send|submit|arrow-up|send-button|composer-submit-button)\b/.test(label);
+  return /\b(send|submit|arrow-up|composer-submit-button|send-button)\b/.test(label);
 }
 
 function writePromptValue(el, value) {
@@ -157,22 +103,27 @@ function writePromptValue(el, value) {
     setter?.call(el, value);
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.focus();
     return;
   }
 
   el.focus();
   el.textContent = value;
-  el.dispatchEvent(new InputEvent('beforeinput', {
-    bubbles: true,
-    cancelable: true,
-    data: value,
-    inputType: 'insertText'
-  }));
-  el.dispatchEvent(new InputEvent('input', {
-    bubbles: true,
-    data: value,
-    inputType: 'insertText'
-  }));
+  el.dispatchEvent(
+    new InputEvent('beforeinput', {
+      bubbles: true,
+      cancelable: true,
+      data: value,
+      inputType: 'insertText'
+    })
+  );
+  el.dispatchEvent(
+    new InputEvent('input', {
+      bubbles: true,
+      data: value,
+      inputType: 'insertText'
+    })
+  );
 }
 
 function submitForm(form) {
@@ -194,7 +145,8 @@ function createDialogText(label, value) {
   const section = document.createElement('section');
   section.className = 'reprompt-review__prompt';
 
-  const heading = document.createElement('h3');
+  const heading = document.createElement('span');
+  heading.className = 'section-label';
   heading.textContent = label;
 
   const body = document.createElement('p');
@@ -204,129 +156,83 @@ function createDialogText(label, value) {
   return section;
 }
 
-function showEnhancementDialog({ original }) {
-  const existing = document.getElementById('reprompt-review-host');
-  if (existing) {
-    existing.remove();
-  }
+function createReviewDialog(original) {
+  let closed = false;
+  let refined = '';
+  let resolveChoice;
+  const choice = new Promise((resolve) => {
+    resolveChoice = resolve;
+  });
 
   const host = document.createElement('div');
   host.id = 'reprompt-review-host';
-  host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;';
 
-  const shadow = host.attachShadow({ mode: 'open' });
   const style = document.createElement('style');
   style.textContent = `
-    :host {
-      all: initial;
-      color-scheme: light;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
     .reprompt-review {
       position: fixed;
       inset: 0;
+      z-index: 2147483647;
       display: grid;
       place-items: center;
       padding: 20px;
-      background: rgba(15, 23, 42, 0.34);
-      backdrop-filter: blur(6px);
+      background: rgba(12, 18, 24, 0.38);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
-
     .reprompt-review__panel {
       width: min(640px, 100%);
       max-height: min(760px, calc(100vh - 40px));
-      overflow: auto;
-      border: 1px solid #d9e2e0;
-      border-radius: 10px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid #d8e2df;
+      border-radius: 12px;
       background: #f8faf9;
       color: #17212b;
-      box-shadow: 0 24px 90px rgba(15, 23, 42, 0.28);
+      box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
     }
-
     .reprompt-review__header,
     .reprompt-review__footer {
       display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
       gap: 14px;
+      align-items: center;
+      justify-content: space-between;
       padding: 16px;
-    }
-
-    .reprompt-review__header {
       border-bottom: 1px solid #e4ebe9;
     }
-
+    .reprompt-review__footer {
+      border-top: 1px solid #e4ebe9;
+      border-bottom: 0;
+    }
     .reprompt-review__header h2 {
-      margin: 0 0 4px;
-      color: #13202a;
-      font-size: 18px;
-      font-weight: 760;
-      letter-spacing: 0;
-      line-height: 1.2;
-    }
-
-    .reprompt-review__header p,
-    .reprompt-review__warning,
-    .reprompt-review__prompt p {
       margin: 0;
-      color: #60707b;
-      font-size: 13px;
-      line-height: 1.5;
-    }
-
-    .reprompt-review__close {
-      display: inline-grid;
-      width: 32px;
-      height: 32px;
-      place-items: center;
-      border: 1px solid #d9e2e0;
-      border-radius: 8px;
-      background: #ffffff;
-      color: #40505b;
-      cursor: pointer;
-      font: inherit;
       font-size: 18px;
-      line-height: 1;
     }
-
+    .reprompt-review__header p,
+    .reprompt-review__prompt p,
+    .reprompt-review__warning {
+      margin: 0;
+      color: #52606b;
+      line-height: 1.45;
+    }
     .reprompt-review__body {
       display: grid;
       gap: 12px;
       padding: 16px;
+      overflow: auto;
     }
-
     .reprompt-review__prompt {
-      padding: 13px;
-      border: 1px solid #dfe6e5;
+      display: grid;
+      gap: 6px;
+      padding: 12px;
+      border: 1px solid #e4ebe9;
       border-radius: 8px;
       background: #ffffff;
     }
-
-    .reprompt-review__prompt--refined {
-      border-color: rgba(15, 118, 110, 0.24);
-      background: #eef8f6;
-    }
-
-    .reprompt-review__prompt h3 {
-      margin: 0 0 8px;
-      color: #52606b;
-      font-size: 11px;
-      font-weight: 760;
-      letter-spacing: 0.04em;
-      line-height: 1.2;
-      text-transform: uppercase;
-    }
-
     .reprompt-review__prompt p {
       color: #24323d;
       white-space: pre-wrap;
     }
-
     .reprompt-review__warning {
       padding: 10px 12px;
       border: 1px solid rgba(202, 138, 4, 0.26);
@@ -334,55 +240,31 @@ function showEnhancementDialog({ original }) {
       background: rgba(202, 138, 4, 0.08);
       color: #805700;
     }
-
-    .reprompt-review__footer {
-      align-items: center;
-      justify-content: flex-end;
-      border-top: 1px solid #e4ebe9;
-      background: rgba(255, 255, 255, 0.7);
-    }
-
     .reprompt-review__actions {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
       justify-content: flex-end;
     }
-
-    .reprompt-review__button {
+    .reprompt-review__button,
+    .reprompt-review__close {
       min-height: 36px;
-      padding: 0 13px;
-      border: 1px solid transparent;
+      border: 1px solid #cbd8d5;
       border-radius: 8px;
+      background: #ffffff;
+      color: #17212b;
       cursor: pointer;
       font: inherit;
-      font-size: 13px;
-      font-weight: 760;
+      padding: 0 12px;
     }
-
     .reprompt-review__button:disabled {
-      cursor: not-allowed;
+      cursor: default;
       opacity: 0.55;
-      box-shadow: none;
     }
-
     .reprompt-review__button--primary {
+      border-color: #0f766e;
       background: #0f766e;
       color: #ffffff;
-      box-shadow: 0 10px 22px rgba(15, 118, 110, 0.18);
-    }
-
-    .reprompt-review__button--secondary,
-    .reprompt-review__button--ghost {
-      border-color: #d9e2e0;
-      background: #ffffff;
-      color: #40505b;
-    }
-
-    .reprompt-review__button:focus-visible,
-    .reprompt-review__close:focus-visible {
-      outline: 2px solid rgba(15, 118, 110, 0.28);
-      outline-offset: 2px;
     }
   `;
 
@@ -403,22 +285,20 @@ function showEnhancementDialog({ original }) {
   title.id = 'reprompt-review-title';
   title.textContent = 'Use enhanced prompt?';
   const subtitle = document.createElement('p');
-  subtitle.textContent = 'Review the enhanced prompt before Reprompt sends it.';
+  subtitle.textContent = 'Review the rewrite before sending.';
   titleBlock.append(title, subtitle);
 
   const closeButton = document.createElement('button');
-  closeButton.className = 'reprompt-review__close';
   closeButton.type = 'button';
-  closeButton.setAttribute('aria-label', 'Keep editing');
-  closeButton.textContent = 'x';
+  closeButton.className = 'reprompt-review__close';
+  closeButton.textContent = 'Close';
   header.append(titleBlock, closeButton);
 
   const body = document.createElement('div');
   body.className = 'reprompt-review__body';
-  body.append(createDialogText('Original prompt', original));
+  body.append(createDialogText('Original', original));
 
-  const refinedSection = createDialogText('Enhanced prompt', 'Enhancing prompt...');
-  refinedSection.classList.add('reprompt-review__prompt--refined');
+  const refinedSection = createDialogText('Enhanced', 'Enhancing prompt...');
   const refinedBody = refinedSection.querySelector('p');
   body.append(refinedSection);
 
@@ -429,44 +309,37 @@ function showEnhancementDialog({ original }) {
 
   const footer = document.createElement('footer');
   footer.className = 'reprompt-review__footer';
-  const actions = document.createElement('div');
-  actions.className = 'reprompt-review__actions';
 
   const editButton = document.createElement('button');
-  editButton.className = 'reprompt-review__button reprompt-review__button--ghost';
   editButton.type = 'button';
+  editButton.className = 'reprompt-review__button';
   editButton.textContent = 'Keep editing';
 
   const originalButton = document.createElement('button');
-  originalButton.className = 'reprompt-review__button reprompt-review__button--secondary';
   originalButton.type = 'button';
+  originalButton.className = 'reprompt-review__button';
   originalButton.textContent = 'Send original';
 
   const acceptButton = document.createElement('button');
-  acceptButton.className = 'reprompt-review__button reprompt-review__button--primary';
   acceptButton.type = 'button';
+  acceptButton.className = 'reprompt-review__button reprompt-review__button--primary';
   acceptButton.textContent = 'Use enhanced prompt';
   acceptButton.disabled = true;
 
+  const actions = document.createElement('div');
+  actions.className = 'reprompt-review__actions';
   actions.append(editButton, originalButton, acceptButton);
   footer.append(actions);
+
   panel.append(header, body, footer);
   overlay.append(panel);
-  shadow.append(style, overlay);
+  host.append(style, overlay);
   document.documentElement.append(host);
-
-  let closed = false;
-  let refined = '';
-  let resolveChoice;
-  const choice = new Promise((resolve) => {
-    resolveChoice = resolve;
-  });
 
   const showWarning = (message) => {
     if (!message || closed) {
       return;
     }
-
     warningText.textContent = message;
     warningText.hidden = false;
   };
@@ -475,65 +348,46 @@ function showEnhancementDialog({ original }) {
     if (closed) {
       return;
     }
-
     closed = true;
     document.removeEventListener('keydown', handleDialogKeydown);
     host.remove();
     resolveChoice({ action, refined });
   };
 
-  const handleDialogKeydown = (event) => {
+  function handleDialogKeydown(event) {
     if (event.key === 'Escape') {
-      event.preventDefault();
       cleanup('edit');
     }
-  };
+  }
 
   closeButton.addEventListener('click', () => cleanup('edit'));
   editButton.addEventListener('click', () => cleanup('edit'));
   originalButton.addEventListener('click', () => cleanup('original'));
-  acceptButton.addEventListener('click', () => {
-    if (refined) {
-      cleanup('accept');
-    }
-  });
+  acceptButton.addEventListener('click', () => cleanup('enhanced'));
   document.addEventListener('keydown', handleDialogKeydown);
-  originalButton.focus();
 
   return {
     choice,
-    get closed() {
-      return closed;
-    },
-    setLoading(message) {
-      if (!closed) {
-        refinedBody.textContent = message;
-      }
-    },
     setResult(result) {
       if (closed) {
         return;
       }
-
       refined = result.refined || '';
       refinedBody.textContent = refined || 'Enhancement unavailable.';
       acceptButton.disabled = !refined;
-
       if (result.warning) {
         showWarning(result.warning);
       }
     },
     setWarning: showWarning,
     setError(message) {
-      if (!closed) {
-        refined = '';
-        refinedBody.textContent = message;
-        acceptButton.disabled = true;
-        showWarning('You can send the original prompt or keep editing.');
+      if (closed) {
+        return;
       }
-    },
-    close() {
-      cleanup('edit');
+      refined = '';
+      refinedBody.textContent = message;
+      acceptButton.disabled = true;
+      showWarning('You can send the original prompt or keep editing.');
     }
   };
 }
@@ -548,12 +402,15 @@ async function logEnhancement(original, result) {
       refined: result.refined,
       source: result.source,
       warning: result.warning,
+      model: result.model,
+      usage: result.usage,
+      costUsd: result.costUsd,
       createdAt: new Date().toISOString()
     }
   });
 }
 
-async function refineForReview(original) {
+function refinePrompt(original) {
   return chrome.runtime.sendMessage({
     type: 'REFINE_PROMPT',
     prompt: original,
@@ -561,12 +418,22 @@ async function refineForReview(original) {
   });
 }
 
-function startBackgroundRefinement(dialog, original) {
+async function autoRefineAndSend(original, compose, submit) {
+  const result = await refinePrompt(original);
+  if (result?.refined) {
+    writePromptValue(compose, result.refined);
+    await logEnhancement(original, result);
+  }
+  submit();
+}
+
+async function reviewAndSend(original, compose, submit) {
+  const dialog = createReviewDialog(original);
   const slowTimer = setTimeout(() => {
     dialog.setWarning('Enhancement is taking longer than expected.');
   }, 8000);
 
-  return refineForReview(original)
+  const resultPromise = refinePrompt(original)
     .then((result) => {
       clearTimeout(slowTimer);
       dialog.setResult(result);
@@ -576,11 +443,32 @@ function startBackgroundRefinement(dialog, original) {
       clearTimeout(slowTimer);
       dialog.setError('Enhancement unavailable.');
       return {
-        refined: '',
+        refined: original,
         source: 'error',
         warning: error instanceof Error ? error.message : String(error)
       };
     });
+
+  const choice = await dialog.choice;
+  if (choice.action === 'edit') {
+    writePromptValue(compose, original);
+    return;
+  }
+
+  if (choice.action === 'original') {
+    writePromptValue(compose, original);
+    submit();
+    return;
+  }
+
+  const result = await resultPromise;
+  const refined = choice.refined || result.refined;
+  if (refined) {
+    const historyResult = { ...result, refined };
+    writePromptValue(compose, refined);
+    await logEnhancement(original, historyResult);
+  }
+  submit();
 }
 
 async function refineAndSubmit(form, compose) {
@@ -597,31 +485,12 @@ async function refineAndSubmit(form, compose) {
   pendingByCompose.add(compose);
 
   try {
-    const dialog = showEnhancementDialog({ original });
-    const resultPromise = startBackgroundRefinement(dialog, original);
-    const choice = await dialog.choice;
-
-    if (choice.action === 'edit') {
-      writePromptValue(compose, original);
-      return;
+    const submit = () => submitForm(form);
+    if (settings.autoChooseEnhanced) {
+      await autoRefineAndSend(original, compose, submit);
+    } else {
+      await reviewAndSend(original, compose, submit);
     }
-
-    if (choice.action === 'original') {
-      writePromptValue(compose, original);
-      submitForm(form);
-      return;
-    }
-
-    const result = await resultPromise;
-    const refined = choice.refined || result.refined;
-    if (!refined) {
-      writePromptValue(compose, original);
-      return;
-    }
-
-    writePromptValue(compose, refined);
-    await logEnhancement(original, { ...result, refined });
-    submitForm(form);
   } finally {
     pendingByForm.delete(form);
     pendingByCompose.delete(compose);
@@ -641,31 +510,12 @@ async function refineAndClick(button, compose) {
   pendingByCompose.add(compose);
 
   try {
-    const dialog = showEnhancementDialog({ original });
-    const resultPromise = startBackgroundRefinement(dialog, original);
-    const choice = await dialog.choice;
-
-    if (choice.action === 'edit') {
-      writePromptValue(compose, original);
-      return;
+    const submit = () => submitButton(button);
+    if (settings.autoChooseEnhanced) {
+      await autoRefineAndSend(original, compose, submit);
+    } else {
+      await reviewAndSend(original, compose, submit);
     }
-
-    if (choice.action === 'original') {
-      writePromptValue(compose, original);
-      submitButton(button);
-      return;
-    }
-
-    const result = await resultPromise;
-    const refined = choice.refined || result.refined;
-    if (!refined) {
-      writePromptValue(compose, original);
-      return;
-    }
-
-    writePromptValue(compose, refined);
-    await logEnhancement(original, { ...result, refined });
-    submitButton(button);
   } finally {
     pendingByCompose.delete(compose);
   }
@@ -713,7 +563,6 @@ function handleKeydown(event) {
 
   const form = compose.closest('form');
   stopSendEvent(event);
-
   if (form) {
     refineAndSubmit(form, compose);
     return;
@@ -748,11 +597,6 @@ function handleSendIntent(event) {
   }
 
   stopSendEvent(event);
-
-  if (pendingByCompose.has(compose)) {
-    return;
-  }
-
   refineAndClick(button, compose);
 }
 
@@ -789,25 +633,13 @@ function observe() {
   observer.observe(document.documentElement, { childList: true, subtree: true });
 }
 
-function handleMessages(message) {
-  if (message?.type === 'SHOW_SIDEBAR') {
-    showSidebar();
-  }
-
-  if (message?.type === 'HIDE_SIDEBAR') {
-    hideSidebar();
-  }
-}
-
 async function bootstrap() {
-  markLoaded();
-
   if (!platform) {
     return;
   }
 
+  markLoaded();
   settings = await getSettings();
-  chrome.runtime.onMessage.addListener(handleMessages);
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local') {
@@ -819,13 +651,6 @@ async function bootstrap() {
     }
   });
 
-  if (settings.sidebarVisible) {
-    showSidebar();
-  } else {
-    ensureSidebar();
-    hideSidebar();
-  }
-
   scanForComposers();
   document.addEventListener('pointerdown', handleSendIntent, true);
   document.addEventListener('mousedown', handleSendIntent, true);
@@ -834,6 +659,4 @@ async function bootstrap() {
   observe();
 }
 
-bootstrap().catch((error) => {
-  console.error('Reprompt content script failed to bootstrap', error);
-});
+bootstrap().catch((error) => console.error('Reprompt content script failed to bootstrap', error));

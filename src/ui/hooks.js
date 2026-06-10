@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getConnectionStatus } from '../shared/api.js';
-import { DEFAULT_SETTINGS, appendHistory, clearHistory, getHistory, getSettings, saveSettings } from '../shared/storage.js';
+import {
+  DEFAULT_SETTINGS,
+  appendHistory,
+  clearHistory,
+  getHistory,
+  getSettings,
+  saveSettings
+} from '../shared/storage.js';
 
 function hasStorage() {
   return typeof chrome !== 'undefined' && Boolean(chrome?.storage?.onChanged);
@@ -9,7 +16,12 @@ function hasStorage() {
 async function getCurrentState() {
   const settings = await getSettings();
   const history = await getHistory();
-  return { settings, history, connection: getConnectionStatus(settings) };
+  return {
+    settings,
+    history,
+    connection: getConnectionStatus(settings),
+    ready: true
+  };
 }
 
 export function useExtensionState() {
@@ -20,17 +32,22 @@ export function useExtensionState() {
     ready: false
   });
 
-  const refresh = async () => {
-    const next = await getCurrentState();
-    setState({ ...next, ready: true });
-    return next;
-  };
-
   useEffect(() => {
+    let active = true;
+
+    const refresh = async () => {
+      const next = await getCurrentState();
+      if (active) {
+        setState(next);
+      }
+    };
+
     refresh();
 
     if (!hasStorage()) {
-      return undefined;
+      return () => {
+        active = false;
+      };
     }
 
     const listener = (changes, areaName) => {
@@ -44,17 +61,20 @@ export function useExtensionState() {
     };
 
     chrome.storage.onChanged.addListener(listener);
-    return () => chrome.storage.onChanged.removeListener(listener);
+    return () => {
+      active = false;
+      chrome.storage.onChanged.removeListener(listener);
+    };
   }, []);
 
   const actions = useMemo(
     () => ({
       updateSettings: async (patch) => {
-        const next = await saveSettings(patch);
+        const settings = await saveSettings(patch);
         const history = await getHistory();
-        const connection = getConnectionStatus(next);
-        setState({ settings: next, history, connection, ready: true });
-        return next;
+        const connection = getConnectionStatus(settings);
+        setState({ settings, history, connection, ready: true });
+        return settings;
       },
       appendHistory: async (entry) => {
         const history = await appendHistory(entry);
@@ -64,8 +84,7 @@ export function useExtensionState() {
       clearHistory: async () => {
         await clearHistory();
         setState((current) => ({ ...current, history: [] }));
-      },
-      refresh
+      }
     }),
     []
   );

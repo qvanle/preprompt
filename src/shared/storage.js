@@ -8,12 +8,12 @@ export const STORAGE_KEYS = {
 export const DEFAULT_SETTINGS = {
   enabled: true,
   autoRefine: true,
-  sidebarVisible: true,
-  activePlatformIds: [...PLATFORM_IDS],
+  autoChooseEnhanced: true,
+  activePlatformIds: PLATFORM_IDS,
   api: {
     endpoint: '',
     apiKey: '',
-    model: ''
+    model: 'gpt-4o-mini'
   }
 };
 
@@ -46,6 +46,7 @@ async function storageSet(items) {
   for (const [key, value] of Object.entries(items)) {
     memoryStore.set(key, value);
   }
+  return undefined;
 }
 
 function deepMerge(base, patch) {
@@ -64,21 +65,33 @@ function deepMerge(base, patch) {
   return patch ?? base;
 }
 
+function migrateSettings(settings) {
+  const next = { ...settings };
+
+  if (typeof next.autoChooseEnhanced !== 'boolean') {
+    next.autoChooseEnhanced = true;
+  }
+
+  delete next.sidebarVisible;
+  return next;
+}
+
 export async function getSettings() {
   const data = await storageGet(STORAGE_KEYS.settings);
-  return deepMerge(DEFAULT_SETTINGS, data[STORAGE_KEYS.settings] ?? {});
+  return migrateSettings(deepMerge(DEFAULT_SETTINGS, data[STORAGE_KEYS.settings] ?? {}));
 }
 
 export async function saveSettings(patch) {
   const current = await getSettings();
-  const next = deepMerge(current, patch);
+  const next = migrateSettings(deepMerge(current, patch));
   await storageSet({ [STORAGE_KEYS.settings]: next });
   return next;
 }
 
 export async function getHistory() {
   const data = await storageGet(STORAGE_KEYS.history);
-  return Array.isArray(data[STORAGE_KEYS.history]) ? data[STORAGE_KEYS.history] : [];
+  const history = data[STORAGE_KEYS.history];
+  return Array.isArray(history) ? history : [];
 }
 
 export async function setHistory(history) {
@@ -88,7 +101,7 @@ export async function setHistory(history) {
 
 export async function appendHistory(entry) {
   const history = await getHistory();
-  const next = [entry, ...history].slice(0, 50);
+  const next = [entry, ...history].slice(0, 100);
   await setHistory(next);
   return next;
 }
@@ -96,3 +109,14 @@ export async function appendHistory(entry) {
 export async function clearHistory() {
   await setHistory([]);
 }
+
+export default {
+  DEFAULT_SETTINGS,
+  STORAGE_KEYS,
+  appendHistory,
+  clearHistory,
+  getHistory,
+  getSettings,
+  saveSettings,
+  setHistory
+};

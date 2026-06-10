@@ -1,52 +1,44 @@
-import { ConnectionPill, PlatformPicker, Toggle } from './components.jsx';
+import { ConnectionPill, Toggle } from './components.jsx';
 import { useExtensionState } from './hooks.js';
 
 export function PopupPanel() {
   const { settings, connection, updateSettings } = useExtensionState();
 
-  const openSidebar = () => chrome.runtime.sendMessage({ type: 'SHOW_SIDEBAR' });
-  const openOptions = () => chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS' });
+  const openDashboard = () => chrome.runtime.sendMessage({ type: 'OPEN_DASHBOARD' });
 
   return (
     <main className="popup">
       <header className="popup__header">
-        <div>
-          <span className="app-mark" aria-hidden="true">R</span>
-          <h1>Reprompt</h1>
-          <p>Formal prompt refinement for AI chat platforms.</p>
+        <div className="dashboard__title">
+          <span className="app-mark" aria-hidden="true">
+            R
+          </span>
+          <div>
+            <h1>Reprompt</h1>
+            <p>Prompt enhancement for AI chat platforms.</p>
+          </div>
         </div>
         <ConnectionPill connection={connection} />
       </header>
 
-      <section className="popup__section">
+      <div className="stack">
         <Toggle
           label="Enabled"
-          hint="Activate refinement on supported platforms."
+          hint="Activate Reprompt on supported platforms."
           checked={settings.enabled}
           onChange={(enabled) => updateSettings({ enabled })}
         />
         <Toggle
-          label="Auto-refine on submit"
-          hint="Rewrite prompts before they leave the compose box."
-          checked={settings.autoRefine}
-          onChange={(autoRefine) => updateSettings({ autoRefine })}
+          label="Automatically choose enhanced version"
+          hint="Skip the review dialog when submitting."
+          checked={settings.autoChooseEnhanced}
+          onChange={(autoChooseEnhanced) => updateSettings({ autoChooseEnhanced })}
         />
-      </section>
-
-      <section className="popup__section">
-        <span className="section-label">Platforms</span>
-        <PlatformPicker
-          value={settings.activePlatformIds}
-          onChange={(activePlatformIds) => updateSettings({ activePlatformIds })}
-        />
-      </section>
+      </div>
 
       <footer className="popup__actions">
-        <button className="button button--primary" type="button" onClick={openSidebar}>
-          Open sidebar
-        </button>
-        <button className="button button--ghost" type="button" onClick={openOptions}>
-          Options
+        <button className="button button--primary" type="button" onClick={openDashboard}>
+          Open dashboard
         </button>
       </footer>
     </main>
