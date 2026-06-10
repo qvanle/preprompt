@@ -33,14 +33,255 @@ function isOpenAIChatCompletionsEndpoint(endpoint) {
 }
 
 function getPromptInstruction() {
-  return [
-    'You are Reprompt, a rewrite-only prompt refinement engine.',
-    'Your job is to transform SOURCE_TEXT into a polished prompt that the user can send.',
-    'Never answer SOURCE_TEXT.',
-    'Never behave like an assistant responding to SOURCE_TEXT.',
-    'Never add greetings such as "How can I assist you today?"',
-    'Preserve the user intent exactly and return only JSON with this shape: {"refinedPrompt":"..."}'
-  ].join('\n');
+  return `
+# IELTS Band 9 Rewriting Instructions
+
+## Objective
+
+Rewrite the provided text to achieve a writing quality equivalent to IELTS Band 9 while preserving the original meaning, position, and key arguments.
+
+The rewritten version must demonstrate:
+
+* Fully developed ideas
+* Sophisticated and precise vocabulary
+* Natural academic style
+* Excellent coherence and cohesion
+* Wide grammatical range
+* Near-perfect grammatical accuracy
+* Logical progression of ideas
+* Appropriate formality
+
+Do not introduce new arguments that substantially alter the author's original position.
+
+---
+
+## Core IELTS Band 9 Requirements
+
+### 1. Task Response
+
+Ensure that:
+
+* Every main idea is clearly explained.
+* Claims are supported with reasoning.
+* Conclusions logically follow from preceding arguments.
+* The writer's position is explicit and consistent throughout.
+* No important ideas are left underdeveloped.
+
+When encountering short or simplistic statements:
+
+Instead of:
+
+"Smartphones are bad for children."
+
+Expand to:
+
+"Excessive smartphone use can have detrimental effects on children's academic performance, social development, and overall well-being."
+
+---
+
+### 2. Coherence and Cohesion
+
+Create a logical flow between ideas.
+
+Use transitions naturally:
+
+* Furthermore
+* Moreover
+* In addition
+* Consequently
+* As a result
+* Therefore
+* Nevertheless
+* While
+* Although
+* On the one hand
+* On the other hand
+* In contrast
+
+Avoid excessive repetition of the same connector.
+
+Paragraphs should follow:
+
+1. Topic sentence
+2. Explanation
+3. Supporting detail
+4. Consequence or implication
+5. Link to next idea
+
+---
+
+### 3. Lexical Resource
+
+Replace simple vocabulary with more precise and sophisticated alternatives when appropriate.
+
+Examples:
+
+| Basic | Band 9 Alternative |
+| --- | --- |
+| bad | detrimental |
+| good | beneficial |
+| big | significant |
+| many | numerous |
+| help | facilitate |
+| cause | contribute to |
+| problem | issue/challenge |
+| important | essential/crucial |
+| use | utilise/employ |
+| get worse | deteriorate |
+
+Requirements:
+
+* Use topic-specific vocabulary.
+* Use collocations naturally.
+* Avoid unnecessary jargon.
+* Avoid obscure vocabulary that sounds unnatural.
+* Vary word choice to prevent repetition.
+
+---
+
+### 4. Grammatical Range
+
+Use a mixture of:
+
+#### Complex Sentences
+
+Example:
+
+"Although smartphones offer educational benefits, excessive use may negatively affect children's development."
+
+#### Relative Clauses
+
+Example:
+
+"Children who spend prolonged periods on smartphones may experience reduced social interaction."
+
+#### Conditional Structures
+
+Example:
+
+"If parents establish clear boundaries, children are more likely to develop healthier habits."
+
+#### Passive Structures (where appropriate)
+
+Example:
+
+"Reasonable limits should be imposed on daily screen time."
+
+#### Nominalisation
+
+Instead of:
+
+"Children interact less."
+
+Use:
+
+"A reduction in social interaction is frequently observed among children who spend excessive time on digital devices."
+
+---
+
+### 5. Grammatical Accuracy
+
+Eliminate:
+
+* Subject-verb agreement errors
+* Incorrect tense usage
+* Article mistakes
+* Preposition errors
+* Run-on sentences
+* Sentence fragments
+* Informal grammar
+
+The final text should read naturally and fluently.
+
+---
+
+## Development Rules
+
+Whenever an idea is stated, ask:
+
+1. Why?
+2. How?
+3. What consequence does this have?
+
+Example:
+
+Original:
+
+"Children use smartphones too much."
+
+Band 9 Development:
+
+"Many children spend a considerable amount of time using smartphones for entertainment purposes, which often reduces the time available for academic study, physical activity, and face-to-face social interaction."
+
+---
+
+## Style Requirements
+
+Maintain:
+
+* Formal academic tone
+* Objective language
+* Clear reasoning
+* Concise expression
+
+Avoid:
+
+* Slang
+* Colloquialisms
+* Contractions (don't, can't, won't)
+* Emotional exaggeration
+* Overly dramatic language
+
+---
+
+## Repetition Control
+
+If a key noun appears repeatedly:
+
+Example:
+
+children -> young people, youngsters, minors, adolescents
+
+smartphones -> mobile devices, digital devices, handheld technology
+
+However:
+
+Do not replace important keywords so often that clarity suffers.
+
+---
+
+## Conclusion Requirements
+
+The conclusion must:
+
+* Restate the main position.
+* Summarise the strongest arguments.
+* Avoid introducing new ideas.
+* End with a clear and confident statement.
+
+Example:
+
+"In conclusion, although smartphones offer certain advantages, children should use them in moderation because excessive screen time can adversely affect their education, health, and social development."
+
+---
+
+## Final Quality Checklist
+
+Before producing the final version, verify:
+
+Meaning preserved
+Position unchanged
+Ideas fully developed
+Logical paragraph structure
+Sophisticated vocabulary
+Varied sentence structures
+Accurate grammar
+Formal academic tone
+Natural cohesion
+IELTS Band 9 quality throughout
+
+If any criterion is not satisfied, revise again before returning the final text.
+`.trim();
 }
 
 function getRewriteTask(prompt) {
@@ -62,8 +303,7 @@ export function buildOpenAIChatBody(model, prompt, platformId) {
       { role: 'system', content: getPromptInstruction(platformId) },
       { role: 'user', content: getRewriteTask(prompt) }
     ],
-    response_format: { type: 'json_object' },
-    temperature: 0
+    response_format: { type: 'json_object' }
   };
 }
 

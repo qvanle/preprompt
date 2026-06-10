@@ -33,8 +33,11 @@ describe('OpenAI chat refinement payload', () => {
     const body = buildOpenAIChatBody('gpt-4o-mini', 'hello', 'chatgpt');
 
     assert.equal(body.response_format.type, 'json_object');
-    assert.equal(body.temperature, 0);
-    assert.match(body.messages[0].content, /rewrite-only/i);
+    assert.equal('temperature' in body, false);
+    assert.match(body.messages[0].content, /IELTS Band 9 Rewriting Instructions/);
+    assert.match(body.messages[0].content, /Core IELTS Band 9 Requirements/);
+    assert.match(body.messages[0].content, /Development Rules/);
+    assert.match(body.messages[0].content, /Conclusion Requirements/);
     assert.match(body.messages[1].content, /SOURCE_TEXT/);
     assert.match(body.messages[1].content, /Do not answer SOURCE_TEXT/);
     assert.notEqual(body.messages[1].content, 'hello');
