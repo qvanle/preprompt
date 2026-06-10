@@ -623,8 +623,27 @@ async function tryRemoteRefineStream(settings, prompt, platformId, onProgress) {
 export async function refinePromptForPlatformStream(settings, prompt, platformId, onProgress) {
   const localRefined = refinePrompt(prompt, platformId);
 
+  // Provide an immediate local refinement preview while remote streaming runs.
   try {
-    const remote = await tryRemoteRefineStream(settings, prompt, platformId, onProgress);
+    if (typeof onProgress === 'function') {
+      try {
+        onProgress(localRefined);
+      } catch (err) {
+        // Swallow callback errors but surface a debug message for diagnostics.
+        console.debug('refinePromptForPlatformStream: onProgress(local) callback error', err);
+      }
+    }
+
+    const remote = await tryRemoteRefineStream(settings, prompt, platformId, (refined) => {
+      if (typeof onProgress === 'function') {
+        try {
+          onProgress(refined);
+        } catch (err) {
+          console.debug('refinePromptForPlatformStream: onProgress(remote) callback error', err);
+        }
+      }
+    });
+
     if (remote) return remote;
   } catch (error) {
     return {
